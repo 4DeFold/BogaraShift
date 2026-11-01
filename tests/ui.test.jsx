@@ -36,7 +36,7 @@ describe('BogaraShift navigation and workflow', () => {
     fireEvent.change(within(dialog).getByLabelText('Главный приоритет'), {target:{value:'Защитить почву'}});
     fireEvent.click(within(dialog).getByRole('button', {name:/Сохранить поле/}));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByText('Поле 7')).toBeTruthy();
+    expect(screen.getByRole('heading', {name:'Поле 7'})).toBeTruthy();
     expect(JSON.parse(localStorage.getItem('bogara-field')).rotation[0]).toBe('Нут');
     fireEvent.click(screen.getByRole('button', {name:/Текущая ротация/}));
     expect(screen.getByText(/СТРАТЕГИЯ A · ДЕТАЛИ/)).toBeTruthy();
@@ -52,14 +52,16 @@ describe('BogaraShift navigation and workflow', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('shows actual fetched historical rows and unavailable sources without fake values', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true, json:async()=>({power:{median:92,below:0,hotMedian:10,years:[{year:2005,precipitation:92,hotDays:10}]},ndvi:null,et:null,pet:null})}));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true, json:async()=>({power:{spring:{median:92,min:92,max:92,driest:[2005],years:[{year:2005,value:92}]},grainHeat:{median:1,years:[{year:2005,value:1}]}},ndvi:null,et:null,pet:null,statuses:{ndvi:'unavailable',et:'no_quality'}})}));
     render(<App/>);
     await waitFor(()=>expect(screen.getByText('92 мм')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', {name:'Посмотреть историю по годам'}));
-    expect(screen.getByRole('table').textContent).toContain('2005');
-    expect(screen.getByText(/часть источников недоступна/i)).toBeTruthy();
+    expect(document.querySelector('#history-table table').textContent).toContain('2005');
+    expect(screen.getAllByText(/Сервис недоступен или вернул ошибку/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Нет подходящего качественного пикселя/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('день / сезон')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name:'Скрыть историю по годам'}));
-    expect(screen.queryByRole('table')).toBeNull();
+    expect(document.querySelector('#history-table')).toBeNull();
     vi.unstubAllGlobals();
   });
   it('does not attach a previous field response after settings change', async () => {
@@ -71,7 +73,7 @@ describe('BogaraShift navigation and workflow', () => {
     fireEvent.change(screen.getByLabelText('Широта'), {target:{value:'42.3'}});
     fireEvent.click(screen.getByRole('button', {name:/Сохранить поле/}));
     await waitFor(()=>expect(resolvers.length).toBe(2));
-    resolvers[0]({ok:true, json:async()=>({power:{median:999,below:0,hotMedian:1,years:[]}})});
+    resolvers[0]({ok:true, json:async()=>({power:{spring:{median:999,min:999,max:999,driest:[2005],years:[{year:2005,value:999}]}}})});
     await waitFor(()=>expect(screen.queryByText('999 мм')).toBeNull());
     expect(screen.getByRole('status').textContent).toContain('Загружаем');
     vi.unstubAllGlobals();
@@ -97,5 +99,31 @@ describe('BogaraShift navigation and workflow', () => {
     render(<App/>);
     await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
     expect(fetch.mock.calls[0][0]).toContain('lat=42.6&lon=69.5');
+  });
+  it('compares strategy counts, marks identical rotations, and updates emphasis', async () => {
+    render(<App/>);
+    fireEvent.click(screen.getAllByRole('button',{name:'Настроить поле'})[0]);
+    fireEvent.change(screen.getByLabelText('Год 1'),{target:{value:'Чистый пар'}});
+    fireEvent.change(screen.getByLabelText('Год 3'),{target:{value:'Сафлор'}});
+    fireEvent.change(screen.getByLabelText('Год 5'),{target:{value:'Люцерна'}});
+    fireEvent.change(screen.getByLabelText('Главный приоритет'),{target:{value:'Снизить рыночный риск'}});
+    fireEvent.click(screen.getByRole('button',{name:/Сохранить поле/}));
+    expect(document.querySelector('.comparison-summary').textContent).toContain('A совпадает с B');
+    const table=document.querySelector('.comparison-summary table');
+    const wheatRow=within(table).getByText('Лет с пшеницей').closest('tr');
+    expect([...wheatRow.querySelectorAll('td')].map(e=>e.textContent)).toEqual(['2','2','2']);
+    expect(within(table).getByText('Проверить сбыт').closest('tr').classList.contains('focus-row')).toBe(true);
+  });
+  it('shows crop-relevant POWER windows with data and excludes unavailable crop windows', async () => {
+    const w={median:125,min:100,max:150,driest:[2005],years:[{year:2005,value:100},{year:2006,value:150}]};
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true,json:async()=>({power:{spring:w,autumn:w,springSummer:w,grainHeat:w},ndvi:null,et:null,pet:null,statuses:{ndvi:'no_quality',et:'unavailable'}})}));
+    render(<App/>);
+    await waitFor(()=>expect(document.querySelector('.comparison-summary').textContent).toContain('медиана 125 мм'));
+    const rows=document.querySelectorAll('.comparison-summary .comparison-table tbody tr');
+    const cells=rows[6].querySelectorAll('td');
+    expect(cells[0].textContent).not.toContain('Нут ·');
+    expect(cells[2].textContent).toContain('Нут ·');
+    expect(document.querySelector('.comparison-summary').textContent).toContain('не доказывает');
+    expect(document.querySelector('.print-report').textContent).toContain('Вопросы агроному');
   });
 });
