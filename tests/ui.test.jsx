@@ -6,8 +6,9 @@ import App from '../app/page.js';
 beforeEach(() => {
   localStorage.clear();
   globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true, json:async()=>({power:null,ndvi:null,et:null,pet:null})}));
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('BogaraShift navigation and workflow', () => {
   it('links to real sections and mobile navigation opens and closes', () => {
@@ -53,26 +54,48 @@ describe('BogaraShift navigation and workflow', () => {
   it('shows actual fetched historical rows and unavailable sources without fake values', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true, json:async()=>({power:{median:92,below:0,hotMedian:10,years:[{year:2005,precipitation:92,hotDays:10}]},ndvi:null,et:null,pet:null})}));
     render(<App/>);
-    fireEvent.click(screen.getByRole('button', {name:/Загрузить данные NASA/}));
     await waitFor(()=>expect(screen.getByText('92 мм')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', {name:'Посмотреть историю по годам'}));
     expect(screen.getByRole('table').textContent).toContain('2005');
-    expect(screen.getByText(/часть источников сейчас недоступна/i)).toBeTruthy();
+    expect(screen.getByText(/часть источников недоступна/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name:'Скрыть историю по годам'}));
     expect(screen.queryByRole('table')).toBeNull();
     vi.unstubAllGlobals();
   });
   it('does not attach a previous field response after settings change', async () => {
-    let resolve;
-    vi.stubGlobal('fetch', vi.fn(()=>new Promise(r=>{resolve=r;})));
+    const resolvers = [];
+    vi.stubGlobal('fetch', vi.fn(()=>new Promise(r=>{resolvers.push(r);})));
     render(<App/>);
-    fireEvent.click(screen.getByRole('button', {name:/Загрузить данные NASA/}));
+    await waitFor(()=>expect(resolvers.length).toBe(1));
     fireEvent.click(screen.getAllByRole('button', {name:'Настроить поле'})[0]);
     fireEvent.change(screen.getByLabelText('Широта'), {target:{value:'42.3'}});
     fireEvent.click(screen.getByRole('button', {name:/Сохранить поле/}));
-    resolve({ok:true, json:async()=>({power:{median:999,below:0,hotMedian:1,years:[]}})});
+    await waitFor(()=>expect(resolvers.length).toBe(2));
+    resolvers[0]({ok:true, json:async()=>({power:{median:999,below:0,hotMedian:1,years:[]}})});
     await waitFor(()=>expect(screen.queryByText('999 мм')).toBeNull());
-    expect(screen.getByRole('button', {name:/Загрузить данные NASA/})).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('Загружаем');
     vi.unstubAllGlobals();
+  });
+  it('switches languages, translates controls and persists the selection without refetching', async () => {
+    render(<App/>);
+    await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText('Язык'), {target:{value:'en'}});
+    expect(screen.getByRole('heading', {name:'What the data tells us'})).toBeTruthy();
+    expect(document.documentElement.lang).toBe('en');
+    expect(localStorage.getItem('bogara-language')).toBe('en');
+    fireEvent.click(screen.getAllByRole('button', {name:'Configure field'})[0]);
+    expect(screen.getByLabelText('Field name').value).toBe('Field in the foothills');
+    expect(screen.getByLabelText('Year 1').selectedOptions[0].textContent).toBe('Winter wheat');
+    fireEvent.click(screen.getByRole('button', {name:'Cancel'}));
+    fireEvent.change(screen.getByLabelText('Language'), {target:{value:'kk'}});
+    expect(screen.getByRole('heading', {name:'Деректер не көрсетеді?'})).toBeTruthy();
+    expect(document.documentElement.lang).toBe('kk');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('loads saved coordinates on startup without first fetching the default location', async () => {
+    localStorage.setItem('bogara-field', JSON.stringify({field:'Test', lat:'42.6', lon:'69.5', priority:'Сохранить влагу', rotation:Array(5).fill('Озимая пшеница')}));
+    render(<App/>);
+    await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
+    expect(fetch.mock.calls[0][0]).toContain('lat=42.6&lon=69.5');
   });
 });
