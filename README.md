@@ -1,23 +1,26 @@
 # BogaraShift
 
-Прототип поддержки выбора севооборота для богарной озимой пшеницы в предгорьях Шымкента. Сравнивает редактируемую текущую ротацию с двумя местными пятилетними вариантами; не прогнозирует урожай, прибыль или поливную норму.
+Decision-support prototype for rainfed winter-wheat rotations in the Shymkent foothills. The interface is available in Russian, Kazakh and English. It compares a farmer-edited five-year sequence with two published example sequences; it does **not** recommend a winner, calculate yield or profit, or measure a particular field's soil water. The default current rotation is an editable demonstration, not a claim about local farms. The visuals are AI-generated illustrations, not satellite photographs.
 
-## Запуск
+## Run and test
 
 ```bash
-npm install
-npm run dev
+npm ci
+npm run dev       # http://localhost:3000
+npm test          # analysis, API state and interface tests
+npm run build
 ```
 
-Откройте http://localhost:3000. Настройка поля и выбранный язык (русский, казахский или английский) хранятся только в localStorage браузера. Данные автоматически загружаются при открытии и после изменения координат через серверный маршрут к NASA POWER и ORNL TESViS; API-ключ для POWER и ORNL не нужен; серверу нужен исходящий доступ к `power.larc.nasa.gov` и `modis.ornl.gov`. Если источники недоступны, приложение показывает прочерки, а не синтетические данные. Существующие проекты Supabase и Vercel не используются и не меняются: для локального однопользовательского workflow база не нужна.
+Node.js 20.9+ is required. NASA POWER and the ORNL MODIS web service do not require an API key for these requests. Data are fetched automatically through `/api/context` when coordinates change; settings and language are stored locally in the browser. If a service is unreachable, the UI reports it and does not substitute fabricated observations. Server network access to the NASA/ORNL domains is required.
 
-## Метод и ограничения
+## Comparison and interpretation
 
-- POWER: 2005–2024, сумма осадков марта–мая и число дней с T2M_MAX ≥ 30 °C. В расчёт попадают только полные 92-дневные окна; число лет и число окон строго ниже медианы показаны рядом. Для чётного числа сезонов медиана — среднее двух срединных значений. Нет интерпретации как прогноза.
-- MODIS ORNL: первый доступный пиксель NDVI MOD13Q1 и ET/PET MOD16A2GF за тестовое окно май 2025. Масштабы 0.0001 и 0.1 соответственно. Значения могут отсутствовать, не являются измерением конкретного поля, а отображаются только пиксели с кодом качества 0 (сопоставленные по дате); интерпретировать с осторожностью. MODIS не определяет культуру. ET/PET не является поливной нормой.
-- Сравнение качественное, не ранжирование; приоритет меняет акцент вопроса, но не рассчитывает оценку. Текущая ротация по умолчанию — только редактируемый пример. Почвенные данные, Kc, ET₀, доход и реальные запасы влаги не моделируются.
-- Проверяйте условия и правила конкурса перед использованием: материалы задания указывают, что работа над решением до хакатона запрещена.
+- Rotation metrics are computed from each actual sequence. Legumes include chickpea and alfalfa. Wheat repetition counts adjacent pairs **within** the five years; the unobserved year-5-to-year-1 boundary is not counted. Wheat-after-fallow/chickpea/safflower counts likewise exclude the unknown predecessor of year 1. Marketing flags are prompts to verify chickpea and safflower sales, not a complete market-risk assessment.
+- Priority highlights relevant rows and a question rather than assigning scores or rankings. Identical sequences are marked and given identical qualitative descriptions. Climate windows are shared by all rotations at the same point; NASA data do not establish the effect of one predecessor or a field-specific recommendation.
+- B (fallow → winter wheat → safflower → winter wheat → alfalfa establishment year) and C (chickpea in place of fallow) are examples in the Ministry of Agriculture of Kazakhstan / Southwest Research Institute recommendations, Sydyk et al. (2010), section 1.1, p. 6: https://www.slideshare.net/slideshow/ss-7483007/7483007. They are not validated for the user's field; five years omit the longer life cycle of alfalfa.
+- Daily NASA POWER `PRECTOTCORR` (mm/day) and `T2M_MAX` (°C), AG community, 2005–2024: complete March–May, September–November and April–June rainfall sums and May–June count of days with Tmax ≥30 °C. Each window independently excludes incomplete years. The UI shows range, driest year, median, sample count and historical rows. For chickpea, safflower and alfalfa these are **preliminary broad calendar windows**, not locally verified growing seasons or predictions. Confirm local planting, crop stage and management with an agronomist.
+- ORNL subsets for MOD13Q1 v061 and MOD16A2GF v061 cover 1 May–2 June 2025. The first good-quality NDVI observation and first same-date good-quality ET/PET pair are examples, **not used in comparing strategies**. NDVI is scaled by 0.0001 (unitless); ET and PET by 0.1 (kg/m² ≈ mm per 8-day composite). Only the center pixel is used; values outside product ranges or without same-date QC=0 are rejected. The UI distinguishes no usable pixel from an unavailable service; neither proves conditions on the ground.
+- The source panel records coordinates, retrieval time, product identifiers, window definitions, quality filters, units and links to the exact POWER and MODIS API requests. POWER is an interpolated/reanalysis-based gridded estimate, not a field sensor; a MODIS pixel may cover several fields. NASA sources change and may be revised or unavailable.
+- Print / Save PDF creates a compact report with the field, coordinates, priority, rotations, comparison, available NASA context, unknowns, questions, sources and date. Review the generated page before sharing; browser print settings can affect pagination.
 
-Ссылки на открытые сервисы: [NASA POWER](https://power.larc.nasa.gov/), [ORNL MODIS API](https://modis.ornl.gov/data/modis_webservice.html). Для некоторых дополнительных защищённых продуктов нужен [Earthdata Login](https://urs.earthdata.nasa.gov/users/new), но он не требуется текущему приложению. Ограничения исходящей сети нельзя обойти с помощью ключа.
-
-Тесты: `npm test`. Production-сборка: `npm run build`.
+This is a prototype for discussion with a local agronomist, not a substitute for soil measurements, local agronomy, market checks or professional advice. NASA data are public data; BogaraShift is not a NASA product.
