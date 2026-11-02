@@ -1,45 +1,74 @@
 'use client';
 import {useEffect,useRef} from 'react';
 import L from 'leaflet';
-import {CELL_SIZE,cellFromIndex} from '../../lib/grid.mjs';
+import {tileUrl} from '../../lib/imagery.mjs';
+import {segmentRgb} from '../../lib/segment.mjs';
+import {validPolygon} from '../../lib/polygon.mjs';
 
-const DATE='2025-05-15';
-const URL=`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${DATE}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
-export default function FieldMap({fields=[],active,focus,onSelect,onError,onZoom,mini=false,labels}) {
- const container=useRef(null), mapRef=useRef(null), gridRef=useRef(null), callbacks=useRef({onSelect,onError,onZoom});
- callbacks.current={onSelect,onError,onZoom};
+function outline(shape){
+ if(Array.isArray(shape?.polygon))return shape.polygon;
+ if(Number.isFinite(shape?.south))return [[shape.south,shape.west],[shape.north,shape.west],[shape.north,shape.east],[shape.south,shape.east]];
+ return [];
+}
+function loadTile(url){return new Promise((resolve,reject)=>{const img=new Image();const timer=setTimeout(()=>{img.src='';reject(new Error('timeout'));},12000);img.crossOrigin='anonymous';img.onload=()=>{clearTimeout(timer);resolve(img);};img.onerror=()=>{clearTimeout(timer);reject(new Error('image unavailable'));};img.src=url;});}
+async function analyze(latlng,date,sensor){
+ const z=12,center=L.CRS.EPSG3857.latLngToPoint(latlng,z),size=96,ox=Math.floor(center.x)-size/2,oy=Math.floor(center.y)-size/2;
+ const minX=Math.floor(ox/256),maxX=Math.floor((ox+size-1)/256),minY=Math.floor(oy/256),maxY=Math.floor((oy+size-1)/256);
+ const canvas=document.createElement('canvas');canvas.width=size;canvas.height=size;const context=canvas.getContext('2d',{willReadFrequently:true});
+ const tasks=[];for(let x=minX;x<=maxX;x++)for(let y=minY;y<=maxY;y++){
+  if(x<0||y<0||x>=2**z||y>=2**z)continue;
+  tasks.push(loadTile(tileUrl(sensor,date,z,y,x)).then(img=>context.drawImage(img,x*256-ox,y*256-oy,256,256)));
+ }
+ try{await Promise.all(tasks);const image=context.getImageData(0,0,size,size);const found=segmentRgb(image,Math.floor(center.x)-ox,Math.floor(center.y)-oy);if(found.error)return {error:found.error};
+  let simplified=L.LineUtil.simplify(found.polygon.map(([x,y])=>L.point(x,y)),.8);
+  if(simplified.length>80)simplified=L.LineUtil.simplify(simplified,1.5);
+  const polygon=simplified.map(({x,y})=>{const p=L.CRS.EPSG3857.pointToLatLng(L.point(ox+x,oy+y),z);return [p.lat,p.lng];});
+  if(polygon.length>80||!validPolygon(polygon))return {error:'uncertain'};
+  return {polygon};
+ }catch{return {error:'unavailable'};}
+}
+export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onProblem,onTileError,onBusy,mode='detect',mini=false,labels,date,sensor}) {
+ const container=useRef(null),mapRef=useRef(null),groupRef=useRef(null),tileRef=useRef(null),callbacks=useRef({}),generation=useRef(0);
+ callbacks.current={onDraft,onExisting,onProblem,onTileError,onBusy,mode,date,sensor,active};
  useEffect(()=>{
-  const map=L.map(container.current,{center:mini?[active.lat,active.lon]:[42.4,69.85],zoom:mini?14:13,minZoom:2,maxZoom:17,zoomControl:!mini,attributionControl:!mini,scrollWheelZoom:!mini,dragging:!mini,keyboard:!mini,zoomAnimation:false});
+  const reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const map=L.map(container.current,{center:mini?[active.lat,active.lon]:[42.4,69.85],zoom:mini?15:13,minZoom:3,maxZoom:18,zoomControl:!mini,attributionControl:!mini,scrollWheelZoom:!mini,dragging:!mini,keyboard:!mini,zoomAnimation:!reduce,fadeAnimation:!reduce,markerZoomAnimation:!reduce,zoomSnap:.25,zoomDelta:.5,wheelDebounceTime:120,wheelPxPerZoomLevel:180,inertia:true,inertiaDeceleration:1800,easeLinearity:.25});
   mapRef.current=map;
-  const tiles=L.tileLayer(URL,{maxNativeZoom:9,maxZoom:17,attribution:'<a href="https://earthdata.nasa.gov/data/imagery/global-imagery-browse-services-gibs" target="_blank" rel="noreferrer">NASA GIBS / MODIS Terra</a> · 2025-05-15'}).addTo(map);
-  tiles.on('tileerror',()=>callbacks.current.onError?.(true));
-  tiles.on('loading',()=>callbacks.current.onError?.(false));
-  const grid=L.layerGroup().addTo(map);gridRef.current=grid;
-  const refresh=()=>{map.fire('render-grid');callbacks.current.onZoom?.(map.getZoom()<13);};
-  map.on('moveend zoomend',refresh);refresh();
-  setTimeout(()=>map.invalidateSize(),50);
-  return ()=>{map.off('moveend zoomend',refresh);map.remove();mapRef.current=null;gridRef.current=null;};
- },[mini]);
- useEffect(()=>{
-  const map=mapRef.current,group=gridRef.current;if(!map||!group)return;
-  const draw=()=>{
-   group.clearLayers();
-   if(mini) {if(active)L.rectangle([[active.south,active.west],[active.north,active.east]],{color:'#ffdd58',weight:3,fillOpacity:.22,interactive:false}).addTo(group);return;}
-   if(map.getZoom()<13)return;
-   const b=map.getBounds(); const south=Math.max(-85,b.getSouth()),north=Math.min(85,b.getNorth()),west=Math.max(-180,b.getWest()),east=Math.min(180,b.getEast());
-   const minRow=Math.floor(south/CELL_SIZE),maxRow=Math.floor(north/CELL_SIZE),minCol=Math.floor(west/CELL_SIZE),maxCol=Math.floor(east/CELL_SIZE);
-   if((maxRow-minRow+1)*(maxCol-minCol+1)>2500)return;
-   const saved=new Set(fields.map(f=>f.cell.id));
-   for(let row=minRow;row<=maxRow;row++) for(let col=minCol;col<=maxCol;col++){
-    const cell=cellFromIndex(row,col),isSaved=saved.has(cell.id),isActive=active?.id===cell.id;
-    const hue=['#79d3d2','#83bc8f','#eec674','#83b6de'][Math.abs((row*13+col*7)%4)];
-    const rectangle=L.rectangle([[cell.south,cell.west],[cell.north,cell.east]],{color:isActive?'#ffdf61':isSaved?'#d5ff8b':hue,weight:isActive?3:isSaved?2:1,fillColor:isSaved?'#a0de7a':hue,fillOpacity:isActive?.36:isSaved?.31:.11,opacity:isSaved?1:.65}).addTo(group);
-    rectangle.on('click',()=>callbacks.current.onSelect?.(cell));
+  const tiles=L.tileLayer(tileUrl(sensor,date,'{z}','{y}','{x}'),{maxNativeZoom:12,maxZoom:18,crossOrigin:'anonymous',attribution:'<a href="https://earthdata.nasa.gov/data/imagery/global-imagery-browse-services-gibs" target="_blank" rel="noreferrer">NASA GIBS / HLS · USGS / Copernicus Sentinel</a>'}).addTo(map);tileRef.current=tiles;
+  tiles.on('tileerror',()=>callbacks.current.onTileError?.(true));tiles.on('loading',()=>callbacks.current.onTileError?.(false));
+  groupRef.current=L.layerGroup().addTo(map);
+  if(mini){const points=outline(active);if(points.length>=3)map.fitBounds(points,{padding:[30,30],maxZoom:16,animate:false});}
+  const click=async e=>{
+   if(mini)return;
+   const state=callbacks.current;
+   if(state.mode==='draw'){
+    const points=state.active?.source==='manual'?state.active.polygon:[];
+    state.onDraft?.({id:state.active?.source==='manual'?state.active.id:crypto.randomUUID(),lat:e.latlng.lat,lon:e.latlng.lng,polygon:[...points,[e.latlng.lat,e.latlng.lng]],source:'manual',imageDate:state.date,sensor:state.sensor});return;
    }
+   const turn=++generation.current;state.onBusy?.(true);state.onProblem?.(null);
+   const result=await analyze(e.latlng,state.date,state.sensor);
+   if(turn!==generation.current)return;
+   callbacks.current.onBusy?.(false);
+   if(result.error){callbacks.current.onProblem?.(result.error==='no_data'?'noData':result.error);return;}
+   callbacks.current.onDraft?.({id:crypto.randomUUID(),lat:e.latlng.lat,lon:e.latlng.lng,polygon:result.polygon,source:'automatic',imageDate:state.date,sensor:state.sensor});
   };
-  map.on('render-grid',draw);draw();return ()=>map.off('render-grid',draw);
+  map.on('click',click);const timer=setTimeout(()=>map.invalidateSize(),80);
+  return ()=>{generation.current++;clearTimeout(timer);map.off('click',click);map.remove();mapRef.current=null;groupRef.current=null;tileRef.current=null;};
+ },[mini]);
+ useEffect(()=>{generation.current++;onBusy?.(false);},[date,sensor,mode]);
+ useEffect(()=>{tileRef.current?.setUrl(tileUrl(sensor,date,'{z}','{y}','{x}'));},[date,sensor]);
+ useEffect(()=>{
+  const group=groupRef.current,map=mapRef.current;if(!group||!map)return;group.clearLayers();
+  if(!mini)fields.forEach(field=>{const points=outline(field.cell);if(points.length<3)return;const poly=L.polygon(points,{color:'#aee881',weight:2,fillColor:'#94d582',fillOpacity:.2,dashArray:field.cell.polygon?null:'5 5'}).addTo(group);poly.on('click',e=>{L.DomEvent.stopPropagation(e);callbacks.current.onExisting?.(field.cell);});});
+  const points=outline(active);if(points.length>=2){
+   if(points.length>=3)L.polygon(points,{color:'#ffdf61',weight:3,fillColor:'#ffdf61',fillOpacity:.18,interactive:false}).addTo(group);
+   else L.polyline(points,{color:'#ffdf61',weight:3,interactive:false}).addTo(group);
+  }
+  if(!mini&&active?.polygon){active.polygon.forEach((point,index)=>{
+   const marker=L.marker(point,{draggable:true,icon:L.divIcon({className:'boundary-vertex',iconSize:[13,13],iconAnchor:[6,6]}),keyboard:false}).addTo(group);
+   marker.on('click',e=>L.DomEvent.stopPropagation(e));marker.on('dragend',()=>{const p=marker.getLatLng(),current=callbacks.current.active;if(!current?.polygon)return;const vertices=current.polygon.map((v,i)=>i===index?[p.lat,p.lng]:v);callbacks.current.onDraft?.({...current,polygon:vertices,edited:true});});
+  });}
  },[fields,active,mini]);
- useEffect(()=>{if(!mini&&focus&&mapRef.current)mapRef.current.setView([focus.lat,focus.lon],14);},[focus,mini]);
+ useEffect(()=>{if(!mini&&focus&&mapRef.current)mapRef.current.flyTo([focus.lat,focus.lon],14,{duration:0.8});},[focus,mini]);
  return <div className={mini?'leaflet-mini':'leaflet-map'} ref={container} aria-label={labels.mapAria} role="region"/>;
 }
-export { DATE };
