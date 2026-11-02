@@ -1,26 +1,22 @@
-# BogaraShift
+# BogaraShift — Select Map
 
-Decision-support prototype for rainfed winter-wheat rotations in the Shymkent foothills. The interface is available in Russian, Kazakh and English. It compares a farmer-edited five-year sequence with two published example sequences; it does **not** recommend a winner, calculate yield or profit, or measure a particular field's soil water. The default current rotation is an editable demonstration, not a claim about local farms. The visuals are AI-generated illustrations, not satellite photographs.
+A demonstration page for selecting a location and recording farmer observations. No account, server-side database, analysis, automatic parcel detection, crop recommendation or NASA endorsement is implied. Available in Russian, Kazakh and English.
 
-## Run and test
+## Run
 
-```bash
+```sh
 npm ci
-npm run dev       # http://localhost:3000
-npm test          # analysis, API state and interface tests
+npm run dev    # http://localhost:3000/selectmap
+npm test
 npm run build
 ```
 
-Node.js 20.9+ is required. NASA POWER and the ORNL MODIS web service do not require an API key for these requests. Data are fetched automatically through `/api/context` when coordinates change; settings and language are stored locally in the browser. If a service is unreachable, the UI reports it and does not substitute fabricated observations. Server network access to the NASA/ORNL domains is required.
+## Map and limitations
 
-## Comparison and interpretation
+The basemap is NASA GIBS `MODIS_Terra_CorrectedReflectance_TrueColor` imagery for **15 May 2025**, retrieved directly by the browser via public WMTS (no key). It is not live; cloud cover, availability and network restrictions can limit its usefulness. Its image resolution is about 250 m, so zooming beyond native level 9 enlarges the image, not the detail. Individual fields and boundaries may not be visible. [NASA GIBS](https://www.earthdata.nasa.gov/data/imagery/global-imagery-browse-services-gibs); [MODIS imagery resolution](https://www.earthdata.nasa.gov/data/instruments/modis/near-real-time-data).
 
-- Rotation metrics are computed from each actual sequence. Legumes include chickpea and alfalfa. Wheat repetition counts adjacent pairs **within** the five years; the unobserved year-5-to-year-1 boundary is not counted. Wheat-after-fallow/chickpea/safflower counts likewise exclude the unknown predecessor of year 1. Marketing flags are prompts to verify chickpea and safflower sales, not a complete market-risk assessment.
-- Priority highlights relevant rows and a question rather than assigning scores or rankings. Identical sequences are marked and given identical qualitative descriptions. Climate windows are shared by all rotations at the same point; NASA data do not establish the effect of one predecessor or a field-specific recommendation.
-- B (fallow → winter wheat → safflower → winter wheat → alfalfa establishment year) and C (chickpea in place of fallow) are examples in the Ministry of Agriculture of Kazakhstan / Southwest Research Institute recommendations, Sydyk et al. (2010), section 1.1, p. 6: https://www.slideshare.net/slideshow/ss-7483007/7483007. They are not validated for the user's field; five years omit the longer life cycle of alfalfa.
-- Daily NASA POWER `PRECTOTCORR` (mm/day) and `T2M_MAX` (°C), AG community, 2005–2024: complete March–May, September–November and April–June rainfall sums and May–June count of days with Tmax ≥30 °C. Each window independently excludes incomplete years. The UI shows range, driest year, median, sample count and historical rows. For chickpea, safflower and alfalfa these are **preliminary broad calendar windows**, not locally verified growing seasons or predictions. Confirm local planting, crop stage and management with an agronomist.
-- ORNL subsets for MOD13Q1 v061 and MOD16A2GF v061 cover 1 May–2 June 2025. The first good-quality NDVI observation and first same-date good-quality ET/PET pair are examples, **not used in comparing strategies**. NDVI is scaled by 0.0001 (unitless); ET and PET by 0.1 (kg/m² ≈ mm per 8-day composite). Only the center pixel is used; values outside product ranges or without same-date QC=0 are rejected. The UI distinguishes no usable pixel from an unavailable service; neither proves conditions on the ground.
-- The source panel records coordinates, retrieval time, product identifiers, window definitions, quality filters, units and links to the exact POWER and MODIS API requests. POWER is an interpolated/reanalysis-based gridded estimate, not a field sensor; a MODIS pixel may cover several fields. NASA sources change and may be revised or unavailable.
-- Print / Save PDF creates a compact report with the field, coordinates, priority, rotations, comparison, available NASA context, unknowns, questions, sources and date. Review the generated page before sharing; browser print settings can affect pagination.
+Colored cells are a deterministic **0.005° × 0.005° regular selection grid**, not identified field polygons; colors have no agronomic meaning. Cells vary in ground dimensions with latitude. At zoom below 13, zoom in to see the grid. Users may alternatively enter coordinates to select the cell. Each saved field represents one cell; this is an approximate area, not a measured field boundary or area. A spatially detailed field-boundary data source or field drawing would be necessary for accurate delineation, neither is included in this demo.
 
-This is a prototype for discussion with a local agronomist, not a substitute for soil measurements, local agronomy, market checks or professional advice. NASA data are public data; BogaraShift is not a NASA product.
+The application stores fields, answers and soil report files only in `localStorage` on the device, not on a server. Browser data deletion deletes them; another device or browser cannot access them. Up to one PDF/JPG/PNG up to 1 MiB per field is accepted; browser storage quota varies and a saving error is shown if the quota is exceeded. Unknowns stay unknown, and incomplete information is visibly flagged; no confidence score or soil analysis is computed. Uploaded documents are not parsed. Saved items can be edited, downloaded or deleted.
+
+The welcome image is an AI-generated illustration; it is not NASA satellite imagery. The map is the actual NASA imagery layer, subject to availability.
