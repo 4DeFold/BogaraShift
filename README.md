@@ -1,6 +1,6 @@
 # BogaraShift — Select Map
 
-A demonstration page for selecting a field and recording farmer observations. There is no account, server-side database, soil analysis, recommendation, cadastral boundary verification or NASA endorsement. Available in Russian, Kazakh and English.
+A demonstration with a field-selection page (`/selectmap`) and a field-plan page (`/fieldplan`) showing saved outlines, crop choices and field details. There is no account, server-side database, soil analysis, recommendation, cadastral boundary verification or NASA endorsement. Available in Russian, Kazakh and English.
 
 ## Run
 
@@ -20,3 +20,7 @@ When a user clicks a point, a local experimental algorithm loads a small HLS GIB
 The app stores fields, answers and soil report files only in `localStorage` on the device, not on a server. Clearing browser data deletes them; another device/browser cannot access them. Up to one PDF/JPG/PNG up to 1 MiB per field is accepted; browser storage quota varies and errors are shown if saving fails. Unknowns stay unknown, and incomplete information is flagged; no confidence score or soil analysis is computed. Uploaded documents are not parsed. Saved items can be edited, downloaded or deleted.
 
 The welcome image is an AI-generated illustration; it is not NASA satellite imagery.
+
+## Field plan (interface prototype)
+
+The second page displays the locally saved fields in a shared HLS map and a responsive two-column card layout. The map and cards open full-screen field details. A crop may be selected manually for demonstration and is stored in the same browser record; it is **not** a calculation or agronomic recommendation. Calculation and AI explanation panels are deliberately marked as not implemented, and unknown observations stay unknown. No AI request is made and no crop is assigned automatically.
