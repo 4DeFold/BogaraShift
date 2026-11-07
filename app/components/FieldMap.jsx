@@ -24,9 +24,9 @@ async function analyze(latlng,date,sensor){
   return {polygon};
  }catch{return {error:'unavailable'};}
 }
-export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onProblem,onTileError,onBusy,mode='detect',mini=false,labels,date,sensor}) {
+export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onProblem,onTileError,onBusy,mode='detect',mini=false,labels,date,sensor,demoFields=null,onDemoSelect}) {
  const container=useRef(null),mapRef=useRef(null),groupRef=useRef(null),tileRef=useRef(null),callbacks=useRef({}),generation=useRef(0);
- callbacks.current={onDraft,onExisting,onProblem,onTileError,onBusy,mode,date,sensor,active};
+ callbacks.current={onDraft,onExisting,onProblem,onTileError,onBusy,mode,date,sensor,active,onDemoSelect,demoFields};
  useEffect(()=>{
   const reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const map=L.map(container.current,{center:mini?[active.lat,active.lon]:[42.4,69.85],zoom:mini?15:13,minZoom:3,maxZoom:18,preferCanvas:true,zoomControl:!mini,attributionControl:!mini,scrollWheelZoom:!mini,dragging:!mini,keyboard:!mini,zoomAnimation:!reduce,fadeAnimation:!reduce,markerZoomAnimation:!reduce,zoomSnap:.25,zoomDelta:.5,wheelDebounceTime:120,wheelPxPerZoomLevel:180,inertia:true,inertiaDeceleration:1800,easeLinearity:.25});
@@ -35,8 +35,9 @@ export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onPr
   tiles.on('tileerror',()=>callbacks.current.onTileError?.(true));tiles.on('loading',()=>callbacks.current.onTileError?.(false));
   groupRef.current=L.layerGroup().addTo(map);
   if(mini){const points=outline(active);if(points.length)map.fitBounds(points,{padding:[30,30],maxZoom:16,animate:false});}
+  else if(demoFields?.length){const bounds=L.latLngBounds(demoFields.flatMap(f=>f.cell.polygon));if(bounds.isValid())map.fitBounds(bounds,{padding:[45,45],maxZoom:15,animate:false});}
   const click=async e=>{
-   if(mini)return;
+   if(mini||callbacks.current.demoFields)return;
    const state=callbacks.current;
    if(state.mode==='draw'){
     const points=state.active?.source==='manual'?state.active.polygon:[];
@@ -56,7 +57,15 @@ export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onPr
  useEffect(()=>{tileRef.current?.setUrl(tileUrl(sensor,date,'{z}','{y}','{x}'));},[date,sensor]);
  useEffect(()=>{
   const group=groupRef.current,map=mapRef.current;if(!group||!map)return;group.clearLayers();
-  if(!mini)fields.forEach(field=>{const points=outline(field.cell);if(!points.length)return;const poly=L.polygon(points,{color:'#aee881',weight:2,fillColor:'#94d582',fillOpacity:.2,dashArray:field.cell.polygon?null:'5 5'}).addTo(group);poly.on('click',e=>{L.DomEvent.stopPropagation(e);callbacks.current.onExisting?.(field.cell);});});
+  if(!mini&&!demoFields)fields.forEach(field=>{const points=outline(field.cell);if(!points.length)return;const poly=L.polygon(points,{color:'#aee881',weight:2,fillColor:'#94d582',fillOpacity:.2,dashArray:field.cell.polygon?null:'5 5'}).addTo(group);poly.on('click',e=>{L.DomEvent.stopPropagation(e);callbacks.current.onExisting?.(field.cell);});});
+  if(!mini&&demoFields){
+   demoFields.forEach((field,index)=>{const points=outline(field.cell),added=fields.some(f=>f.cell.id===field.cell.id);if(!points.length)return;
+    const poly=L.polygon(points,{color:added?'#8fe1a8':'#ffdf61',weight:3,fillColor:added?'#47ab76':'#ffdf61',fillOpacity:.38}).addTo(group);
+    poly.on('click',e=>{L.DomEvent.stopPropagation(e);callbacks.current.onDemoSelect?.(field)});
+    const marker=L.marker([field.cell.lat,field.cell.lon],{title:field.name,keyboard:true,icon:L.divIcon({className:'demo-map-number',html:String(index+1),iconSize:[32,32],iconAnchor:[16,16]})}).addTo(group);
+    marker.on('click',e=>{L.DomEvent.stopPropagation(e);callbacks.current.onDemoSelect?.(field)});
+   });
+  }
   const points=outline(active);if(points.length){
    L.polygon(points,{color:'#ffdf61',weight:3,fillColor:'#ffdf61',fillOpacity:.18,interactive:false}).addTo(group);
   }
@@ -65,7 +74,7 @@ export default function FieldMap({fields=[],active,focus,onDraft,onExisting,onPr
    const marker=L.marker(point,{draggable:true,icon:L.divIcon({className:'boundary-vertex',iconSize:[13,13],iconAnchor:[6,6]}),keyboard:false}).addTo(group);
    marker.on('click',e=>L.DomEvent.stopPropagation(e));marker.on('dragend',()=>{const p=marker.getLatLng(),current=callbacks.current.active;if(!current?.polygon)return;const vertices=current.polygon.map((v,i)=>i===index?[p.lat,p.lng]:v);callbacks.current.onDraft?.({...current,polygon:vertices,edited:true});});
   });}
- },[fields,active,mini]);
+ },[fields,active,mini,demoFields]);
  useEffect(()=>{if(!mini&&focus&&mapRef.current)mapRef.current.flyTo([focus.lat,focus.lon],14,{duration:0.8});},[focus,mini]);
  return <div className={mini?'leaflet-mini':'leaflet-map'} ref={container} aria-label={labels.mapAria} role="region"/>;
 }
