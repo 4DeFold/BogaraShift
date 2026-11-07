@@ -15,3 +15,10 @@ describe('selectmap',()=>{
  it('validates coordinates and does not invent a field without imagery',async()=>{render(<SelectMap/>);fireEvent.click(await screen.findByRole('button',{name:'Начать работу'}));fireEvent.click(screen.getByText('Найти по координатам'));fireEvent.change(screen.getByLabelText('Широта'),{target:{value:'91'}});fireEvent.click(screen.getByRole('button',{name:/Найти/ }));expect(screen.getByRole('alert')).toBeTruthy();fireEvent.change(screen.getByLabelText('Широта'),{target:{value:'42.4'}});fireEvent.click(screen.getByRole('button',{name:/Найти/ }));expect(screen.getByText(/Карта перемещена к координатам/)).toBeTruthy();expect(screen.queryByRole('dialog')).toBeNull();fireEvent.click(screen.getByRole('button',{name:'No imagery'}));expect(screen.getByText(/нет снимка/)).toBeTruthy();});
  it('reports storage failure rather than pretending a field was saved',async()=>{await open();fireEvent.change(screen.getByLabelText('Название поля'),{target:{value:'Поле'}});vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('quota');});fireEvent.click(screen.getByRole('button',{name:/Сохранить поле/}));expect(screen.getByRole('alert').textContent).toContain('Не удалось сохранить');expect(screen.getByRole('dialog',{name:'Расскажите о поле'})).toBeTruthy();});
 });
+it('stores analysis crop separately from the current-year plan when attaching a report',async()=>{
+ await open();fireEvent.change(screen.getByLabelText('Анализ почвы'),{target:{files:[new File(['pdfdata'],'report.pdf',{type:'application/pdf'})]}});await screen.findByText('report.pdf');
+ fireEvent.change(screen.getByLabelText('Культура, к которой относится анализ'),{target:{value:'chickpea'}});
+ fireEvent.change(screen.getByLabelText(/Планируемая культура на сезон/),{target:{value:'wheat'}});
+ fireEvent.click(screen.getByRole('button',{name:/Сохранить поле/}));
+ await waitFor(()=>{const item=JSON.parse(localStorage.getItem('bogarashift-selectmap-v1'))[0];expect(item.report.crop).toBe('chickpea');expect(item.seasonPlans[new Date().getFullYear()].A.crop).toBe('wheat')});
+});

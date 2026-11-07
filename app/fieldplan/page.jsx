@@ -1,9 +1,10 @@
 'use client';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import dynamic from 'next/dynamic';
-import {ArrowLeft,ArrowRight,ArrowUpRight, Check,ChevronRight,FileText,Layers,Leaf,MapPin,Satellite,ShieldAlert,Sparkles,X} from 'lucide-react';
+import {ArrowLeft,ArrowRight,ArrowUpRight, Check,ChevronRight,FileText,Layers,Leaf,MapPin,Satellite,ShieldAlert,X} from 'lucide-react';
 import {texts} from '../../lib/text.js';
 import {planText} from '../../lib/plan-text.js';
+import {plantText} from '../../lib/plant-text.js';
 import {STORAGE,LANGUAGE,CROPS,observation,cropLabel} from '../../lib/plan.mjs';
 import {DEFAULT_DATE} from '../../lib/imagery.mjs';
 import {dashboardText} from '../../lib/dashboard-text.js';
@@ -12,6 +13,7 @@ import {areaHa,serverAreaHa,geometryForCell,validateGeometry,exportGeoJSON,impor
 import {emptyField} from '../../lib/grid.mjs';
 import OutlinePreview from '../components/OutlinePreview';
 import ClimatePanel from '../components/ClimatePanel';
+import AiExplanation from '../components/AiExplanation';
 import PlanningTools from '../components/PlanningTools';
 import CloudWorkspace from '../components/CloudWorkspace';
 const PlanMap=dynamic(()=>import('../components/PlanMap'),{ssr:false,loading:()=> <div className="map-loading">NASA GIBS</div>});
@@ -25,14 +27,14 @@ function Detail({field,index,t,base,onClose,onCrop,saveError,year,scenario,lang,
  const source=field.cell.source==='legacy'||(!field.cell.polygon&&!field.cell.geometry)?t.legacy:field.cell.source==='imported'?t.imported:field.cell.source==='manual'?t.drawn:t.auto;
  const serverArea=serverAreaHa(field.cell),area=serverArea??areaHa(field.cell),issues=checks(field,year);
  const stats=[['texture',t.texture],['drainage',t.drainage],['drying',t.drying],['salinity',t.salinity],['terrain',t.terrain]];
- const extras=[[t.report,field.report?t.filePresent:t.fileAbsent],[t.moisture,field.moisture!==''&&field.moisture!=null?`${field.moisture}% · ${field.moistureDate||'—'} · ${field.moistureDepth||'—'} cm`:t.unspecified],[t.yield,field.yieldHistory?.trim()||t.unspecified],[t.equipment,field.equipment?.trim()||t.unspecified],[t.buyer,field.buyer?.trim()||t.unspecified]];
+ const extras=[[t.report,field.report?`${t.filePresent} · ${plantText[lang].reportCrop}: ${field.report.crop==='other'?(field.report.otherCrop||plantText[lang].other):t.cropNames[field.report.crop]||plantText[lang].unknown}`:t.fileAbsent],[t.moisture,field.moisture!==''&&field.moisture!=null?`${field.moisture}% · ${field.moistureDate||'—'} · ${field.moistureDepth||'—'} cm`:t.unspecified],[t.yield,field.yieldHistory?.trim()||t.unspecified],[t.equipment,field.equipment?.trim()||t.unspecified],[t.buyer,field.buyer?.trim()||t.unspecified]];
  return <div className="detail-overlay"><section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="detail-title" className="detail-screen"><div className="detail-top"><div className="detail-top-brand"><img src="/logo.png" alt=""/><strong>BogaraShift</strong><span>/</span><span>{t.detailKicker}</span></div><button ref={ref} type="button" className="detail-close" onClick={onClose}><span>{t.close}</span><X size={20}/></button></div><div className="detail-scroll"><div className="detail-inner"><button type="button" className="back-link" onClick={onClose}><ArrowLeft size={16}/> {t.allFields}</button><div className="detail-title-row"><div><div className="section-kicker"><span>{String(index+1).padStart(2,'0')}</span> {t.detailKicker}</div><h2 id="detail-title">{field.name}</h2><div className="detail-location"><MapPin size={15}/>{coords}</div></div><span className="detail-demo">{t.demo}</span></div>
  <div className="detail-hero"><div className="detail-image"><Thumbnail field={field} t={t}/></div><div className="detail-crop"><div className="detail-crop-kicker"><Leaf size={18}/>{t.planLabel}</div><h3>{cropLabel(field.displayCrop,t)}</h3><label htmlFor="plan-crop">{t.chooseCrop}</label><select id="plan-crop" value={CROPS.includes(field.displayCrop)?field.displayCrop:''} onChange={e=>onCrop(field.cell.id,e.target.value)}><option value="">{t.cropUnset}</option>{CROPS.map(c=><option value={c} key={c}>{t.cropNames[c]}</option>)}</select><p>{t.choiceHelp}</p><small>{t.season}: {year} · {t.scenario} {scenario}. {t.seasonHelp}</small>{field.plannedCrop&&<p>{t.legacyCrop} {cropLabel(field.plannedCrop,t)}. {t.oldChoice}</p>}<small>{t.cropSaved}</small>{saveError&&<p className="plan-error" role="alert">{saveError}</p>}</div></div>
  <div className="detail-section"><div className="detail-heading"><div><div className="section-kicker"><span>01</span> {t.summary.toUpperCase()}</div><h3>{t.summary}</h3><p>{t.summaryDesc}</p></div></div><div className="detail-stats"><div><span>{t.coords}</span><strong>{coords}</strong></div><div><span>{t.origin}</span><strong>{source}</strong></div><div><span>{t.area}</span><strong>{area===null?t.notAvailable:`${area.toFixed(2)} ${t.ha}${serverArea!==null?' · PostGIS':''}`}</strong></div><div><span>{t.status}</span><strong>{field.cell.boundaryStatus==='confirmed'?t.confirmedBoundary:t.draftBoundary}</strong></div>{stats.map(([key,label])=><div key={key}><span>{label}</span><strong>{observation(field,key,base)}</strong></div>)}</div></div>
  <div className="detail-section"><div className="section-kicker"><span>02</span> {t.risks.toUpperCase()}</div><h3>{t.risks}</h3><ul>{issues.length?issues.map(issue=><li key={issue}>{t[issue]}</li>):<li>{t.noRules}</li>}</ul><p>{t.ruleDisclaimer}</p></div>
  <PlanningTools key={`${field.cell.id}-${year}-${scenario}`} field={field} year={year} scenario={scenario} lang={lang} t={t} onPatch={patch=>onPatch(field.cell.id,patch)} onHistory={(historyYear,crop)=>onHistory(field.cell.id,historyYear,crop)}/>
  <ClimatePanel key={`${field.cell.id}-${year}`} field={field} year={year} lang={lang}/>
- <div className="ai-placeholder"><div className="ai-icon"><Sparkles size={19}/></div><div><div className="ai-label">{t.aiBadge}</div><h3>{t.aiTitle}</h3><p>{t.aiPending}</p></div></div>
+ <AiExplanation field={field} year={year} lang={lang}/>
  <div className="detail-section"><div className="detail-heading"><div><div className="section-kicker"><span>03</span> {t.details.toUpperCase()}</div><h3>{t.details}</h3></div></div><div className="extra-grid">{extras.map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div><div className="detail-bottom-note"><ShieldAlert size={17}/>{t.unknownNotice}</div></div></div></section></div>;
 }
 export default function FieldPlan(){

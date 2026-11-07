@@ -1,0 +1,12 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+const mock=vi.hoisted(()=>({getUser:vi.fn(),rpc:vi.fn(),ask:vi.fn()}));
+vi.mock('@supabase/supabase-js',()=>({createClient:()=>({auth:{getUser:mock.getUser},rpc:mock.rpc})}));
+vi.mock('../lib/ai.mjs',async importOriginal=>({...await importOriginal(),askZai:mock.ask}));
+import {POST} from '../app/api/ai/route.js';
+const context={lang:'ru',year:2026,crop:'wheat',texture:'loamy'};
+const request=(body=context,token='token')=>new Request('https://preview.test/api/ai',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(body)});
+beforeEach(()=>{process.env.ZAI_API_KEY='test-only';process.env.NEXT_PUBLIC_SUPABASE_URL='https://test.example';process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='test-public';mock.getUser.mockResolvedValue({data:{user:{id:'a'}},error:null});mock.rpc.mockResolvedValue({data:true,error:null});mock.ask.mockResolvedValue({answer:'hello',model:'glm-test'});});
+afterEach(()=>{vi.clearAllMocks();delete process.env.ZAI_API_KEY;delete process.env.NEXT_PUBLIC_SUPABASE_URL;delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;});
+it('fails closed when the shared quota migration is unavailable',async()=>{mock.rpc.mockResolvedValue({error:{message:'missing'}});const response=await POST(request());expect(response.status).toBe(503);expect((await response.json()).error).toBe('QUOTA_UNAVAILABLE');expect(mock.ask).not.toHaveBeenCalled();});
+it('enforces authentication and daily quota before provider calls',async()=>{mock.getUser.mockResolvedValueOnce({data:{user:null},error:{}});expect((await POST(request())).status).toBe(401);expect(mock.rpc).not.toHaveBeenCalled();mock.rpc.mockResolvedValue({data:false,error:null});expect((await POST(request())).status).toBe(429);expect(mock.ask).not.toHaveBeenCalled();});
+it('only passes permitted fields to the provider',async()=>{const response=await POST(request({...context,report:'private file',lat:42,name:'private name'}));expect(response.status).toBe(200);const sent=mock.ask.mock.calls[0][0];expect(sent).not.toHaveProperty('report');expect(sent).not.toHaveProperty('name');expect(sent).not.toHaveProperty('lat');expect(response.headers.get('cache-control')).toBe('no-store');});
