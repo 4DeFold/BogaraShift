@@ -12,6 +12,6 @@ DO $$ DECLARE uid uuid; BEGIN
  PERFORM set_config('request.jwt.claim.sub',uid::text,true);
  IF NOT public.consume_ai_quota() OR NOT public.consume_ai_quota() OR NOT public.consume_ai_quota() THEN RAISE EXCEPTION 'quota denied too soon'; END IF;
  IF public.consume_ai_quota() THEN RAISE EXCEPTION 'per-user cap was bypassed'; END IF;
- IF has_table_privilege(current_user,'private.ai_daily_usage','select') THEN RAISE EXCEPTION 'usage table exposed'; END IF;
+ IF has_schema_privilege(current_user,'private','usage') THEN RAISE EXCEPTION 'private schema exposed'; END IF;
 END $$;
 ROLLBACK;
