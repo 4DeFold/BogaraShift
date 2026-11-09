@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {validPolygon} from '../lib/polygon.mjs';
+test('validates manually edited outlines without claiming cadastral accuracy',()=>{assert.equal(validPolygon([[42,69],[42,69.01],[42.01,69.01],[42.01,69]]),true);assert.equal(validPolygon([[42,69],[42.01,69.01],[42,69.01],[42.01,69]]),false);assert.equal(validPolygon([[1,1],[1,1],[1,2]]),false);assert.equal(validPolygon([[1,1],[2,2],[3,3]]),false);});
