@@ -1,22 +1,24 @@
 'use client';
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import L from 'leaflet';
 import {tileUrl} from '../../lib/imagery.mjs';
+import useLatestHls from './useLatestHls';
 import {cropLabel} from '../../lib/plan.mjs';
 import {leafletGeometry} from '../../lib/geometry.mjs';
 import {cropColor} from '../../lib/dashboard.mjs';
 
-export default function PlanMap({fields,t,date,sensor,onOpen,onTileError,fitSignal=0}){
- const container=useRef(null),mapRef=useRef(null),layerRef=useRef(null),tilesRef=useRef(null),lastIds=useRef(''),lastFit=useRef(0),callbacks=useRef({});callbacks.current={onOpen,onTileError};
+export default function PlanMap({fields,t,onOpen,onTileError,onImagery,fitSignal=0}){
+ const container=useRef(null),mapRef=useRef(null),layerRef=useRef(null),tilesRef=useRef(null),lastIds=useRef(''),lastFit=useRef(0),callbacks=useRef({});callbacks.current={onOpen,onTileError,onImagery};
+ const [position,setPosition]=useState({lat:42.4,lon:69.85}),imagery=useLatestHls(position);
+ useEffect(()=>{callbacks.current.onImagery?.(imagery);},[imagery]);
  useEffect(()=>{
   const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const map=L.map(container.current,{center:[42.4,69.85],zoom:12,minZoom:3,maxZoom:18,preferCanvas:true,zoomSnap:.25,zoomDelta:.5,wheelDebounceTime:120,wheelPxPerZoomLevel:180,inertia:true,inertiaDeceleration:1800,easeLinearity:.25,zoomAnimation:!reduced,fadeAnimation:!reduced});mapRef.current=map;
-  const tiles=L.tileLayer(tileUrl(sensor,date,'{z}','{y}','{x}'),{maxNativeZoom:12,maxZoom:18,crossOrigin:'anonymous',attribution:'<a href="https://earthdata.nasa.gov/data/imagery/global-imagery-browse-services-gibs" target="_blank" rel="noreferrer">NASA GIBS / HLS · USGS / Copernicus Sentinel</a>'}).addTo(map);tilesRef.current=tiles;
-  tiles.on('tileerror',()=>callbacks.current.onTileError?.(true));tiles.on('loading',()=>callbacks.current.onTileError?.(false));
+  const moved=()=>{const p=map.getCenter();setPosition(old=>Math.abs(old.lat-p.lat)<.00001&&Math.abs(old.lon-p.lng)<.00001?old:{lat:p.lat,lon:p.lng});};map.on('moveend',moved);moved();
   layerRef.current=L.layerGroup().addTo(map);const timer=setTimeout(()=>map.invalidateSize(),80);
-  return ()=>{clearTimeout(timer);map.remove();mapRef.current=null;layerRef.current=null;tilesRef.current=null;lastIds.current='';lastFit.current=0;};
+  return ()=>{clearTimeout(timer);map.off('moveend',moved);map.remove();mapRef.current=null;layerRef.current=null;tilesRef.current=null;lastIds.current='';lastFit.current=0;};
  },[]);
- useEffect(()=>{tilesRef.current?.setUrl(tileUrl(sensor,date,'{z}','{y}','{x}'));},[date,sensor]);
+ useEffect(()=>{const map=mapRef.current;if(!map)return;if(tilesRef.current){map.removeLayer(tilesRef.current);tilesRef.current=null;}callbacks.current.onTileError?.(false);if(imagery.status!=='ready')return;const tiles=L.tileLayer(tileUrl(imagery.sensor,imagery.date,'{z}','{y}','{x}'),{maxNativeZoom:12,maxZoom:18,crossOrigin:'anonymous',attribution:'<a href="https://earthdata.nasa.gov/data/imagery/global-imagery-browse-services-gibs" target="_blank" rel="noreferrer">NASA GIBS / HLS · USGS / Copernicus Sentinel</a>'});tilesRef.current=tiles;tiles.on('tileerror',()=>callbacks.current.onTileError?.(true));tiles.addTo(map);tiles.bringToBack();return()=>{if(map.hasLayer(tiles))map.removeLayer(tiles);if(tilesRef.current===tiles)tilesRef.current=null;};},[imagery]);
  useEffect(()=>{
   const layer=layerRef.current,map=mapRef.current;if(!layer||!map)return;
   const items=fields.flatMap(field=>{try{const points=leafletGeometry(field.cell),bounds=L.latLngBounds(points);return bounds.isValid()?[{field,points,bounds,center:bounds.getCenter()}]:[];}catch{return []}});

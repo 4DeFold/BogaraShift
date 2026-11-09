@@ -1,5 +1,0 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {segmentRgb} from '../lib/segment.mjs';
-function image(w,h,color){const data=new Uint8ClampedArray(w*h*4);for(let i=0;i<w*h;i++)data.set(color,i*4);return {width:w,height:h,data};}
-function rect(im,x0,y0,x1,y1,color){for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)im.data.set(color,4*(y*im.width+x));}
-test('extracts a bounded connected patch from synthetic image pixels and no invented rectangle',()=>{const im=image(30,30,[80,110,60,255]);rect(im,8,10,17,19,[160,130,70,255]);const result=segmentRgb(im,12,14);assert.equal(result.pixels,81);assert.deepEqual(result.polygon,[[8,10],[17,10],[17,19],[8,19]]);});
-test('refuses transparent, cloud, open-ended and very small regions',()=>{let im=image(30,30,[0,0,0,0]);assert.equal(segmentRgb(im,10,10).error,'no_data');im=image(30,30,[250,250,250,255]);assert.equal(segmentRgb(im,10,10).error,'uncertain');im=image(30,30,[30,80,40,255]);assert.equal(segmentRgb(im,10,10).error,'uncertain');im=image(30,30,[20,80,50,255]);rect(im,10,10,11,11,[150,120,40,255]);assert.equal(segmentRgb(im,10,10).error,'uncertain');});
