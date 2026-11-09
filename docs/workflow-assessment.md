@@ -1,6 +1,6 @@
 # Farmer workflow — implementation assessment
 
-Scope: the test branch, not a production agronomic system. Checks as of this change; the protected Vercel deployment and external NASA/Z.ai services still need real end-to-end verification.
+Scope: the test branch, not a production agronomic system. Checks as of this change; the protected Vercel deployment and external NASA/Gemini services still need real end-to-end verification.
 
 | Workflow step | Current implementation | Important gap |
 |---|---|---|

@@ -1,25 +1,23 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {askZai,modelName,validateAiContext} from '../lib/ai.mjs';
+import {askGemini,modelName,validateAiContext} from '../lib/ai.mjs';
 const context={lang:'ru',year:2026,crop:'wheat',texture:'loamy',drainage:'unknown',drying:'unknown',salinity:'unknown',terrain:'unknown',previous:''};
 test('AI input rejects unknown values and strips files and identifiers',()=>{
  assert.equal(validateAiContext({...context,crop:'injected'}),null);assert.equal(validateAiContext({...context,lang:'xx'}),null);
  assert.deepEqual(validateAiContext({...context,name:'private',report:'secret',lat:42}),context);
- assert.equal(modelName('https://example.test','glm-5.3'),'glm-5.3');
+ assert.equal(modelName('https://example.test','gemini-3.5-flash-lite'),'gemini-3.5-flash-lite');
 });
-test('AI uses fallback only on unknown model and never sends an attachment',async()=>{
- let calls=[];const fetcher=async(_url,options)=>{calls.push(JSON.parse(options.body));return calls.length===1?{ok:false,status:400,json:async()=>({error:{code:'1211'}})}:{ok:true,json:async()=>({choices:[{message:{content:'Information only'}}]})}};
- const result=await askZai(context,{key:'test-only',fetcher});assert.equal(result.model,'glm-5.2');assert.equal(calls.length,2);assert.equal(calls[0].model,'glm-5.3');assert.equal(calls[1].model,'glm-5.2');assert.ok(!JSON.stringify(calls).includes('report.pdf'));
+test('Gemini uses server-side header authentication and sends only selected context',async()=>{
+ let calls=0;const fetcher=async(url,options)=>{calls++;assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');assert.equal(options.headers['x-goog-api-key'],'test-only');assert.ok(!url.includes('test-only'));const body=JSON.parse(options.body);assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,'MINIMAL');assert.equal(body.generationConfig.maxOutputTokens,2048);assert.equal(JSON.parse(body.contents[0].parts[0].text).crop,'wheat');assert.ok(!JSON.stringify(body).includes('report.pdf'));return {ok:true,json:async()=>({candidates:[{finishReason:'STOP',content:{parts:[{text:'Information only'}]}}]})}};
+ const result=await askGemini(context,{key:'test-only',fetcher});assert.deepEqual(result,{answer:'Information only',model:'gemini-3.5-flash-lite'});assert.equal(calls,1);
 });
-test('AI stops on provider limit or failure without a fallback call',async()=>{
- let count=0;const response=await askZai(context,{key:'test-only',fetcher:async()=>{count++;return {ok:false,status:429,json:async()=>({error:{code:'1113'}})}}});assert.equal(response.error,'LIMIT');assert.equal(count,1);
- const down=await askZai(context,{key:'test-only',fetcher:async()=>{throw Error('offline')}});assert.equal(down.error,'UPSTREAM');
+test('maps provider limits and errors without exposing response bodies or retrying',async()=>{
+ for(const [status,payload,expected] of [[429,{},'LIMIT'],[401,{},'AUTH'],[403,{},'AUTH'],[404,{},'MODEL'],[400,{error:{details:[{reason:'API_KEY_INVALID'}]}},'AUTH'],[500,{error:{message:'private'}},'UPSTREAM']]){let count=0;const result=await askGemini(context,{key:'test-only',fetcher:async()=>{count++;return {ok:false,status,json:async()=>payload}}});assert.deepEqual(result,{error:expected});assert.equal(count,1);}
+ const down=await askGemini(context,{key:'test-only',fetcher:async()=>{throw Error('offline')}});assert.equal(down.error,'UPSTREAM');
 });
-test('uses the required thinking mode for GLM-5.3 and appropriate fallback settings',async()=>{
- const calls=[];await askZai(context,{key:'test-only',fetcher:async(_url,options)=>{calls.push(JSON.parse(options.body));return calls.length===1?{ok:false,status:400,json:async()=>({error:{code:'1211'}})}:{ok:true,json:async()=>({choices:[{message:{content:'ok'},finish_reason:'stop'}]})}}});
- assert.deepEqual(calls[0].thinking,{type:'enabled'});assert.equal(calls[0].reasoning_effort,'low');assert.equal(calls[0].max_tokens,2048);assert.deepEqual(calls[1].thinking,{type:'disabled'});assert.equal(calls[1].max_tokens,700);assert.equal(calls[1].reasoning_effort,undefined);
+test('rejects truncated, blocked and empty responses instead of showing a partial answer',async()=>{
+ for(const candidate of [{finishReason:'MAX_TOKENS',content:{parts:[{text:'partial'}]}},{finishReason:'SAFETY',content:{parts:[{text:'unsafe'}]}},{finishReason:'STOP',content:{parts:[{thought:true,text:'internal'}]}}]){const result=await askGemini(context,{key:'test-only',fetcher:async()=>({ok:true,json:async()=>({candidates:[candidate]})})});assert.equal(result.error,candidate.finishReason==='MAX_TOKENS'?'INCOMPLETE':'UPSTREAM');}
 });
-test('does not silently accept a truncated answer or leak provider messages',async()=>{
- const partial=await askZai(context,{key:'test-only',fetcher:async()=>({ok:true,json:async()=>({choices:[{finish_reason:'length',message:{content:'partial'}}]})})});assert.equal(partial.error,'INCOMPLETE');
- const auth=await askZai(context,{key:'test-only',fetcher:async()=>({ok:false,status:401,json:async()=>({error:{code:'1000',message:'private'}})})});assert.deepEqual(auth,{error:'AUTH'});
+test('configures 2.5 Flash thinking separately when selected',async()=>{
+ let body;await askGemini(context,{key:'test-only',model:'gemini-2.5-flash',fetcher:async(_url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({candidates:[{finishReason:'STOP',content:{parts:[{text:'ok'}]}}]})}}});assert.deepEqual(body.generationConfig.thinkingConfig,{thinkingBudget:0});
 });
