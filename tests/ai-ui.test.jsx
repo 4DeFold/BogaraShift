@@ -10,3 +10,6 @@ it('requests an AI explanation without any account or authorization header',asyn
 it('shows clearly labelled local checks when the provider or quota is unavailable',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:429}));render(<AiExplanation field={field} year={2026} lang="ru"/>);fireEvent.click(screen.getByRole('button',{name:'Получить объяснение'}));await screen.findByText(/не ответ ИИ/);expect(screen.getByText(/повтор пшеницы может повысить риск/)).toBeTruthy();
 });
+it('shows an actionable configuration error without requiring sign-in',async()=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:503,json:async()=>({error:'NOT_CONFIGURED'})}));render(<AiExplanation field={field} year={2026} lang="ru"/>);fireEvent.click(screen.getByRole('button',{name:'Получить объяснение'}));await screen.findByText(/ИИ не настроен в этом развёртывании/);expect(screen.getByText(/не ответ ИИ/)).toBeTruthy();
+});

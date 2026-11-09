@@ -13,3 +13,6 @@ it('does not store raw IP or send private fields to the provider',async()=>{cons
 it('rejects malformed or excessively large requests before consuming quota',async()=>{expect((await POST(request({...context,crop:'invalid'}))).status).toBe(400);expect((await POST(request({...context,arbitrary:'x'.repeat(5000)}))).status).toBe(400);expect(mock.rpc).not.toHaveBeenCalled();});
 
 it('normalizes proxy IPs and sends malformed addresses to the shared bucket',async()=>{await POST(request(context,'::ffff:192.0.2.1'));const mapped=mock.rpc.mock.calls[0][1].p_subject_hash;await POST(request(context,'192.0.2.1'));expect(mock.rpc.mock.calls[1][1].p_subject_hash).toBe(mapped);await POST(request(context,'bad-address'));await POST(request(context,'also-bad'));expect(mock.rpc.mock.calls[2][1].p_subject_hash).toBe(mock.rpc.mock.calls[3][1].p_subject_hash);});
+it('reports safe provider failure categories without exposing provider details',async()=>{
+ for(const [internal,expected] of [['AUTH','PROVIDER_AUTH'],['MODEL','MODEL_UNAVAILABLE'],['INCOMPLETE','INCOMPLETE'],['UPSTREAM','PROVIDER_UNAVAILABLE']]){mock.ask.mockResolvedValueOnce({error:internal,message:'secret provider detail'});const response=await POST(request());expect(response.status).toBe(502);expect(await response.json()).toEqual({error:expected});}
+});

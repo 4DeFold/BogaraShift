@@ -15,3 +15,11 @@ test('AI stops on provider limit or failure without a fallback call',async()=>{
  let count=0;const response=await askZai(context,{key:'test-only',fetcher:async()=>{count++;return {ok:false,status:429,json:async()=>({error:{code:'1113'}})}}});assert.equal(response.error,'LIMIT');assert.equal(count,1);
  const down=await askZai(context,{key:'test-only',fetcher:async()=>{throw Error('offline')}});assert.equal(down.error,'UPSTREAM');
 });
+test('uses the required thinking mode for GLM-5.3 and appropriate fallback settings',async()=>{
+ const calls=[];await askZai(context,{key:'test-only',fetcher:async(_url,options)=>{calls.push(JSON.parse(options.body));return calls.length===1?{ok:false,status:400,json:async()=>({error:{code:'1211'}})}:{ok:true,json:async()=>({choices:[{message:{content:'ok'},finish_reason:'stop'}]})}}});
+ assert.deepEqual(calls[0].thinking,{type:'enabled'});assert.equal(calls[0].reasoning_effort,'low');assert.equal(calls[0].max_tokens,2048);assert.deepEqual(calls[1].thinking,{type:'disabled'});assert.equal(calls[1].max_tokens,700);assert.equal(calls[1].reasoning_effort,undefined);
+});
+test('does not silently accept a truncated answer or leak provider messages',async()=>{
+ const partial=await askZai(context,{key:'test-only',fetcher:async()=>({ok:true,json:async()=>({choices:[{finish_reason:'length',message:{content:'partial'}}]})})});assert.equal(partial.error,'INCOMPLETE');
+ const auth=await askZai(context,{key:'test-only',fetcher:async()=>({ok:false,status:401,json:async()=>({error:{code:'1000',message:'private'}})})});assert.deepEqual(auth,{error:'AUTH'});
+});

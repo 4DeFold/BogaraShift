@@ -28,6 +28,9 @@ export async function POST(request){
   const quota=await client.rpc('consume_public_ai_quota',{p_subject_hash:subjectHash});if(quota.error)return reply('QUOTA_UNAVAILABLE',503);if(quota.data!==true)return reply('DAILY_LIMIT',429);
   const result=await askZai(context,{key,model:modelName(process.env.ZAI_MODEL,'glm-5.3'),fallback:modelName(process.env.ZAI_FALLBACK_MODEL,'glm-5.2')});
   if(result.error==='LIMIT'){cooldownUntil=Date.now()+60000;return reply('PROVIDER_LIMIT',429)}
+  if(result.error==='AUTH')return reply('PROVIDER_AUTH',502);
+  if(result.error==='MODEL')return reply('MODEL_UNAVAILABLE',502);
+  if(result.error==='INCOMPLETE')return reply('INCOMPLETE',502);
   if(result.error)return reply('PROVIDER_UNAVAILABLE',502);
   return Response.json(result,{headers:noStore});
  }catch{return reply('SERVICE_UNAVAILABLE',503)}
