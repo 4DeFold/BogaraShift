@@ -21,3 +21,7 @@ test('rejects truncated, blocked and empty responses instead of showing a partia
 test('configures 2.5 Flash thinking separately when selected',async()=>{
  let body;await askGemini(context,{key:'test-only',model:'gemini-2.5-flash',fetcher:async(_url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({candidates:[{finishReason:'STOP',content:{parts:[{text:'ok'}]}}]})}}});assert.deepEqual(body.generationConfig.thinkingConfig,{thinkingBudget:0});
 });
+test('cleans known internal rule prefixes if a provider repeats them',async()=>{
+ const result=await askGemini(context,{key:'test-only',fetcher:async()=>({ok:true,json:async()=>({candidates:[{finishReason:'STOP',content:{parts:[{text:'WHEAT_AFTER_WHEAT: Повтор культуры. FALLOW_MOISTURE: Возможны риски.'}]}}]})})});
+ assert.equal(result.answer,'Повтор культуры. Возможны риски.');
+});
